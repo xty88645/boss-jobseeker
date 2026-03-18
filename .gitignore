@@ -8,6 +8,7 @@ Thumbs.db
 
 # Config with secrets (never commit)
 config/
+restore-config.js
 *.yaml
 *.yml
 
