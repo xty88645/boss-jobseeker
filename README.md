@@ -98,11 +98,19 @@ AI 甄别 Boss 直聘消息，自动回复 + 发简历的 Chrome 扩展。
 - LLM API 调用仅发送岗位摘要信息（公司名/岗位/薪资/消息摘要），不发送个人简历内容
 - API Key 仅存储在浏览器本地存储中
 
+## 打赏
+
+如果觉得好用，请作者喝杯咖啡
+
+<p align="center">
+  <img src="alipay-qr.jpg" width="200" alt="支付宝打赏">
+  <br>
+  <sub>支付宝扫码打赏</sub>
+</p>
+
 ## 作者
 
 **aliu.ronin@gmail.com**
-
-如果觉得好用，请作者喝杯咖啡 — 扩展内点击「关于 / 打赏」扫码
 
 ## License
 
