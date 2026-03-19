@@ -116,9 +116,62 @@
           <input type="number" id="cfgMaxScan" min="1" max="50">
         </div>
       </div>
-      <div class="field">
-        <label>黑名单行业（逗号分隔）</label>
-        <input type="text" id="cfgBlacklist" placeholder="博彩, P2P, 资金盘, ...">
+      <div class="field-row">
+        <div class="field">
+          <label>黑名单行业（逗号分隔）</label>
+          <input type="text" id="cfgBlacklist" placeholder="博彩, P2P, 资金盘, ...">
+        </div>
+        <div class="field">
+          <label>接受外包/外派</label>
+          <select id="cfgOutsource">
+            <option value="0">拒绝</option>
+            <option value="1">接受</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h4>评分调节</h4>
+      <div class="hint" style="margin-bottom:6px;">正数为加分，负数为扣分，0 表示不影响</div>
+      <div class="field-row">
+        <div class="field">
+          <label>外包/外派</label>
+          <input type="number" id="cfgScOutsource" value="-100">
+        </div>
+        <div class="field">
+          <label>996/大小周</label>
+          <input type="number" id="cfgSc996" value="-20">
+        </div>
+        <div class="field">
+          <label>信息不足</label>
+          <input type="number" id="cfgScInfo" value="-50">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>AI方向匹配</label>
+          <input type="number" id="cfgScAiMatch" value="10">
+        </div>
+        <div class="field">
+          <label>非AI方向</label>
+          <input type="number" id="cfgScAiNo" value="-5">
+        </div>
+        <div class="field">
+          <label>猎头/HR联系</label>
+          <input type="number" id="cfgScRecruiter" value="5">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>知名公司</label>
+          <input type="number" id="cfgScFamous" value="10">
+        </div>
+        <div class="field">
+          <label>上市公司</label>
+          <input type="number" id="cfgScPublic" value="5">
+        </div>
+        <div class="field"></div>
       </div>
     </div>
 

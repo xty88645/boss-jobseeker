@@ -209,8 +209,20 @@ async function loadConfig() {
     document.getElementById("cfgBaseline").value = cfg.filters?.salary_baseline_k ?? 500;
     document.getElementById("cfgCities").value = (cfg.filters?.cities || []).join(", ");
     document.getElementById("cfgBlacklist").value = (cfg.filters?.blacklist_industries || []).join(", ");
+    document.getElementById("cfgOutsource").value = cfg.filters?.accept_outsource ? "1" : "0";
     document.getElementById("cfgThreshold").value = cfg.actions?.auto_reply_threshold ?? 70;
     document.getElementById("cfgMaxScan").value = cfg.actions?.max_per_scan ?? 10;
+
+    // 评分调节
+    const sc = cfg.scoring || {};
+    document.getElementById("cfgScOutsource").value = sc.outsource ?? -100;
+    document.getElementById("cfgSc996").value = sc.s996 ?? -20;
+    document.getElementById("cfgScInfo").value = sc.info_insufficient ?? -50;
+    document.getElementById("cfgScAiMatch").value = sc.ai_match ?? 10;
+    document.getElementById("cfgScAiNo").value = sc.ai_nomatch ?? -5;
+    document.getElementById("cfgScRecruiter").value = sc.recruiter_contact ?? 5;
+    document.getElementById("cfgScFamous").value = sc.famous_company ?? 10;
+    document.getElementById("cfgScPublic").value = sc.public_company ?? 5;
 
     document.getElementById("cfgGreeting").value = cfg.actions?.greeting_template || "";
     document.getElementById("cfgFollowup").value = cfg.actions?.followup_template || "";
@@ -310,6 +322,17 @@ document.getElementById("saveConfigBtn").addEventListener("click", async () => {
       salary_baseline_k: parseInt(document.getElementById("cfgBaseline").value) || 500,
       cities: document.getElementById("cfgCities").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
       blacklist_industries: document.getElementById("cfgBlacklist").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+      accept_outsource: document.getElementById("cfgOutsource").value === "1",
+    },
+    scoring: {
+      outsource: parseInt(document.getElementById("cfgScOutsource").value),
+      s996: parseInt(document.getElementById("cfgSc996").value),
+      info_insufficient: parseInt(document.getElementById("cfgScInfo").value),
+      ai_match: parseInt(document.getElementById("cfgScAiMatch").value),
+      ai_nomatch: parseInt(document.getElementById("cfgScAiNo").value),
+      famous_company: parseInt(document.getElementById("cfgScFamous").value),
+      public_company: parseInt(document.getElementById("cfgScPublic").value),
+      recruiter_contact: parseInt(document.getElementById("cfgScRecruiter").value),
     },
     actions: {
       auto_reply_threshold: parseInt(document.getElementById("cfgThreshold").value) || 70,
