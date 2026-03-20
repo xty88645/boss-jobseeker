@@ -212,10 +212,11 @@ const DEFAULT_CONFIG = {
     api_url: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
     api_key: "", model: "GLM-4.7",
   },
-  openclaw: {
+  feishu: {
     enabled: false,
-    gateway_url: "http://127.0.0.1:18789",
-    token: "",
+    app_id: "",
+    app_secret: "",
+    open_id: "",
     notify_reply: true,
     notify_interview: true,
     notify_summary: false,
@@ -537,14 +538,56 @@ async function llmDetectInterview(config, text) {
   return (await llmChat(config.llm || {}, prompt)) || { is_interview: false, summary: "" };
 }
 
-// ── OpenClaw 通知 ──
-async function notifyOpenClaw(config, event, data) {
-  const oc = config.openclaw;
-  if (!oc?.enabled || !oc?.token) return;
-  if (event === "reply" && !oc.notify_reply) return;
-  if (event === "interview" && !oc.notify_interview) return;
-  if (event === "summary" && !oc.notify_summary) return;
-  // alert 事件始终推送，不受开关控制
+// ── 飞书应用通知 ──
+let _feishuToken = null;
+let _feishuTokenExpire = 0;
+
+async function getFeishuToken(appId, appSecret) {
+  if (_feishuToken && Date.now() < _feishuTokenExpire) return _feishuToken;
+  const resp = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+  });
+  if (!resp.ok) throw new Error(`获取飞书 Token 失败: HTTP ${resp.status}`);
+  const rj = await resp.json();
+  if (rj.code !== 0) throw new Error(`飞书 Token 错误: ${rj.msg}`);
+  _feishuToken = rj.tenant_access_token;
+  _feishuTokenExpire = Date.now() + (rj.expire - 60) * 1000; // 提前 60s 刷新
+  return _feishuToken;
+}
+
+async function sendFeishu(appId, appSecret, openId, text) {
+  if (!appId || !appSecret) return { ok: false, msg: "未配置飞书 App ID/Secret" };
+  if (!openId) return { ok: false, msg: "未配置接收者 Open ID" };
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 10000);
+  try {
+    const token = await getFeishuToken(appId, appSecret);
+    const resp = await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id", {
+      method: "POST", signal: ac.signal,
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ receive_id: openId, msg_type: "text", content: JSON.stringify({ text }) }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 100)}`);
+    const rj = await resp.json();
+    if (rj.code !== 0) throw new Error(rj.msg || JSON.stringify(rj));
+    return { ok: true };
+  } catch (e) {
+    if (e.name === "AbortError") return { ok: false, msg: "连接超时" };
+    _feishuToken = null; // token 可能过期，清掉重试
+    return { ok: false, msg: e.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function notifyFeishu(config, event, data) {
+  const fs = config.feishu;
+  if (!fs?.enabled || !fs?.app_id) return;
+  if (event === "reply" && !fs.notify_reply) return;
+  if (event === "interview" && !fs.notify_interview) return;
+  if (event === "summary" && !fs.notify_summary) return;
 
   let text = "";
   if (event === "reply") {
@@ -560,18 +603,9 @@ async function notifyOpenClaw(config, event, data) {
   }
   if (!text) return;
 
-  const url = (oc.gateway_url || "http://127.0.0.1:18789").replace(/\/+$/, "");
-  try {
-    const resp = await fetch(`${url}/v1/notify`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${oc.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text, source: "boss-jobseeker", event }),
-    });
-    if (!resp.ok) console.warn(`[Boss助手] OpenClaw 通知响应: ${resp.status}`);
-    else console.log(`[Boss助手] OpenClaw 通知已发送: ${event}`);
-  } catch (e) {
-    console.error("[Boss助手] OpenClaw 通知失败:", e);
-  }
+  const r = await sendFeishu(fs.app_id, fs.app_secret, fs.open_id, text);
+  if (r.ok) await L.info("通知", `飞书已发送: ${event}`);
+  else await L.warn("通知", `飞书发送失败: ${r.msg}`, { event });
 }
 
 // ── 消息路由 ──
@@ -590,6 +624,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getLogs: () => _getLogs(),
     clearLogs: () => chrome.storage.local.set({ [LOG_KEY]: [] }).then(() => ({ ok: true })),
     notifyAlert: () => handleNotifyAlert(msg.data),
+    testLlm: () => handleTestLlm(msg.data),
+    testFeishu: () => handleTestFeishu(msg.data),
   };
   const handler = handlers[msg.action];
   if (handler) { handler().then(sendResponse); return true; }
@@ -619,7 +655,7 @@ async function handleEvaluate(data) {
       debug: data.debug || false, completed: true, timestamp: ts(),
     };
     await saveToProcessed(chatId, r);
-    notifyOpenClaw(config, "interview", r);
+    notifyFeishu(config, "interview", r);
     console.log(`[Boss助手] INTERVIEW(跳过自动回复): ${company} | ${inv.keyword}`);
     return r;
   }
@@ -687,7 +723,7 @@ async function handleEvaluate(data) {
     debug: data.debug || false, completed: action !== "REPLY", timestamp: ts(),
   };
   await saveToProcessed(chatId, r);
-  if (action === "REPLY" && score >= threshold) notifyOpenClaw(config, "reply", r);
+  if (action === "REPLY" && score >= threshold) notifyFeishu(config, "reply", r);
   console.log(`[Boss助手] ${score}分 | ${action} | ${company} | ${salary} | ${reason}`);
   return r;
 }
@@ -754,13 +790,14 @@ async function handleGetConfig() {
     },
     actions: { auto_reply_threshold: c.actions?.auto_reply_threshold || 70, greeting_template: c.actions?.greeting_template || "", followup_template: c.actions?.followup_template || "", max_per_scan: c.actions?.max_per_scan || 10 },
     llm: { provider: c.llm?.provider || "glm", api_url: c.llm?.api_url || "", api_key: c.llm?.api_key || "", model: c.llm?.model || "" },
-    openclaw: {
-      enabled: c.openclaw?.enabled || false,
-      gateway_url: c.openclaw?.gateway_url || "http://127.0.0.1:18789",
-      token: c.openclaw?.token || "",
-      notify_reply: c.openclaw?.notify_reply !== false,
-      notify_interview: c.openclaw?.notify_interview !== false,
-      notify_summary: c.openclaw?.notify_summary || false,
+    feishu: {
+      enabled: c.feishu?.enabled || false,
+      app_id: c.feishu?.app_id || "",
+      app_secret: c.feishu?.app_secret || "",
+      open_id: c.feishu?.open_id || "",
+      notify_reply: c.feishu?.notify_reply !== false,
+      notify_interview: c.feishu?.notify_interview !== false,
+      notify_summary: c.feishu?.notify_summary || false,
     },
     providers: LLM_PROVIDERS,
   };
@@ -797,11 +834,11 @@ async function handleSaveConfig(data) {
     c.llm = c.llm || {};
     for (const k of ["provider", "api_url", "api_key", "model"]) { if (data.llm[k] !== undefined) c.llm[k] = data.llm[k]; }
   }
-  if (data.openclaw) {
-    c.openclaw = c.openclaw || {};
-    if (data.openclaw.enabled !== undefined) c.openclaw.enabled = data.openclaw.enabled;
-    for (const k of ["gateway_url", "token"]) { if (data.openclaw[k] !== undefined) c.openclaw[k] = data.openclaw[k]; }
-    for (const k of ["notify_reply", "notify_interview", "notify_summary"]) { if (data.openclaw[k] !== undefined) c.openclaw[k] = data.openclaw[k]; }
+  if (data.feishu) {
+    c.feishu = c.feishu || {};
+    if (data.feishu.enabled !== undefined) c.feishu.enabled = data.feishu.enabled;
+    for (const k of ["app_id", "app_secret", "open_id"]) { if (data.feishu[k] !== undefined) c.feishu[k] = data.feishu[k]; }
+    for (const k of ["notify_reply", "notify_interview", "notify_summary"]) { if (data.feishu[k] !== undefined) c.feishu[k] = data.feishu[k]; }
   }
   await saveConfigStore(c);
   console.log("[Boss助手] 配置已保存");
@@ -822,34 +859,49 @@ async function handleGetStats() {
 async function handleNotifyAlert(data) {
   const config = await getConfig();
   await L.error("告警", `${data.type}: ${data.msg}`, { url: (data.url || "").substring(0, 80) });
-  // alert 始终推送，即使 OpenClaw 总开关关闭也尝试发送
-  const oc = config.openclaw;
-  if (oc?.token) {
+  // alert 始终推送，即使通知总开关关闭也尝试发送
+  const fs = config.feishu;
+  if (fs?.app_id) {
     const labels = { login_expired: "登录失效", captcha: "验证码风控", rate_limit: "频率限制", risk_control: "账号风控" };
     const label = labels[data.type] || data.type;
     const text = `🚨 [Boss助手] 紧急告警: ${label}\n${data.msg}\n扫描已自动暂停，请尽快处理！\n页面: ${(data.url || "").substring(0, 80)}`;
-    const url = (oc.gateway_url || "http://127.0.0.1:18789").replace(/\/+$/, "");
-    try {
-      const resp = await fetch(`${url}/v1/notify`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${oc.token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ text, source: "boss-jobseeker", event: "alert", priority: "urgent" }),
-      });
-      if (!resp.ok) await L.warn("告警", `OpenClaw 推送响应: ${resp.status}`);
-      else await L.info("告警", "已通过 OpenClaw 推送紧急告警");
-    } catch (e) {
-      await L.error("告警", `OpenClaw 推送失败: ${e.message}`);
-    }
+    const r = await sendFeishu(fs.app_id, fs.app_secret, fs.open_id, text);
+    if (r.ok) await L.info("告警", "已通过飞书推送紧急告警");
+    else await L.warn("告警", `飞书推送失败: ${r.msg}`);
   } else {
-    await L.warn("告警", "未配置 OpenClaw Token，无法推送告警（仅记录日志）");
+    await L.warn("告警", "未配置飞书 App ID，无法推送告警（仅记录日志）");
   }
   return { ok: true };
 }
 
 async function handleNotifyRoundSummary(data) {
   const config = await getConfig();
-  await notifyOpenClaw(config, "summary", data || {});
+  await notifyFeishu(config, "summary", data || {});
   return { ok: true };
+}
+
+async function handleTestLlm(data) {
+  const { provider, api_url, api_key, model } = data || {};
+  if (!api_key) return { ok: false, msg: "请先填写 API Key" };
+  const t0 = Date.now();
+  const llmCfg = { provider, api_url, api_key, model };
+  const result = await llmChat(llmCfg, '请回复一个JSON：{"ok":true}');
+  const latency = Date.now() - t0;
+  if (result) {
+    return { ok: true, msg: `连接成功 (${latency}ms) 回复: ${JSON.stringify(result)}`, latency, model };
+  }
+  return { ok: false, msg: `调用失败 (${latency}ms)，请查看日志` };
+}
+
+async function handleTestFeishu(data) {
+  const { app_id, app_secret, open_id } = data || {};
+  if (!app_id || !app_secret) return { ok: false, msg: "请先填写 App ID 和 App Secret" };
+  if (!open_id) return { ok: false, msg: "请先填写接收者 Open ID" };
+  const t0 = Date.now();
+  const r = await sendFeishu(app_id, app_secret, open_id, "[Boss助手] 测试通知 - 连接正常 ✅");
+  const latency = Date.now() - t0;
+  if (r.ok) return { ok: true, msg: `通知发送成功 (${latency}ms)` };
+  return { ok: false, msg: r.msg };
 }
 
 async function handleClearProcessed() {

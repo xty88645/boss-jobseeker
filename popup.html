@@ -238,45 +238,53 @@
         </div>
         <div class="hint" style="color:#e65100;">留空则自动降级为规则引擎评分（精度约 75%）</div>
       </div>
+      <button type="button" id="testLlmBtn" class="secondary" style="margin-top:6px;font-size:11px;padding:5px;">测试 AI 模型连接</button>
+      <div id="testLlmResult" class="hint" style="margin-top:3px;display:none;"></div>
     </div>
 
     <div class="section">
-      <h4>OpenClaw 通知</h4>
+      <h4>飞书通知</h4>
+      <div class="field">
+        <label>启用通知</label>
+        <select id="cfgFeishuEnabled">
+          <option value="0">关闭</option>
+          <option value="1">开启</option>
+        </select>
+      </div>
       <div class="field-row">
         <div class="field">
-          <label>启用通知</label>
-          <select id="cfgOcEnabled">
-            <option value="0">关闭</option>
-            <option value="1">开启</option>
-          </select>
+          <label>App ID</label>
+          <input type="text" id="cfgFeishuAppId" placeholder="cli_xxxx" style="font-size:11px;">
         </div>
         <div class="field">
-          <label>Gateway 地址</label>
-          <input type="text" id="cfgOcUrl" placeholder="http://127.0.0.1:18789" style="font-size:11px;">
+          <label>App Secret</label>
+          <div class="api-key-wrap">
+            <input type="password" id="cfgFeishuAppSecret">
+            <span class="toggle-eye" id="toggleFeishuEye">&#128065;</span>
+          </div>
         </div>
       </div>
       <div class="field">
-        <label>Gateway Token</label>
-        <div class="api-key-wrap">
-          <input type="password" id="cfgOcToken">
-          <span class="toggle-eye" id="toggleOcEye">&#128065;</span>
-        </div>
+        <label>接收者 Open ID</label>
+        <input type="text" id="cfgFeishuOpenId" placeholder="ou_xxxx" style="font-size:11px;">
+        <div class="hint">飞书开放平台 → 事件订阅中可查看，或联系管理员获取</div>
       </div>
       <div class="field">
         <label>通知场景</label>
         <div style="display:flex;gap:12px;margin-top:2px;">
           <label style="font-size:12px;display:flex;align-items:center;gap:3px;">
-            <input type="checkbox" id="cfgOcReply"> 自动投递
+            <input type="checkbox" id="cfgFeishuReply"> 自动投递
           </label>
           <label style="font-size:12px;display:flex;align-items:center;gap:3px;">
-            <input type="checkbox" id="cfgOcInterview"> 面试邀请
+            <input type="checkbox" id="cfgFeishuInterview"> 面试邀请
           </label>
           <label style="font-size:12px;display:flex;align-items:center;gap:3px;">
-            <input type="checkbox" id="cfgOcSummary"> 轮次摘要
+            <input type="checkbox" id="cfgFeishuSummary"> 轮次摘要
           </label>
         </div>
       </div>
-      <div class="hint">通过本地 OpenClaw Gateway 推送到 WhatsApp / 飞书</div>
+      <button type="button" id="testFeishuBtn" class="secondary" style="margin-top:6px;font-size:11px;padding:5px;">测试飞书通知</button>
+      <div id="testFeishuResult" class="hint" style="margin-top:3px;display:none;"></div>
     </div>
 
     <button id="saveConfigBtn">保存配置</button>

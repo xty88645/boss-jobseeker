@@ -309,13 +309,14 @@ async function loadConfig() {
     document.getElementById("cfgApiKey").value = cfg.llm?.api_key || "";
     updateProviderNote(providerSel.value);
 
-    // OpenClaw
-    document.getElementById("cfgOcEnabled").value = cfg.openclaw?.enabled ? "1" : "0";
-    document.getElementById("cfgOcUrl").value = cfg.openclaw?.gateway_url || "http://127.0.0.1:18789";
-    document.getElementById("cfgOcToken").value = cfg.openclaw?.token || "";
-    document.getElementById("cfgOcReply").checked = cfg.openclaw?.notify_reply !== false;
-    document.getElementById("cfgOcInterview").checked = cfg.openclaw?.notify_interview !== false;
-    document.getElementById("cfgOcSummary").checked = cfg.openclaw?.notify_summary || false;
+    // 飞书
+    document.getElementById("cfgFeishuEnabled").value = cfg.feishu?.enabled ? "1" : "0";
+    document.getElementById("cfgFeishuAppId").value = cfg.feishu?.app_id || "";
+    document.getElementById("cfgFeishuAppSecret").value = cfg.feishu?.app_secret || "";
+    document.getElementById("cfgFeishuOpenId").value = cfg.feishu?.open_id || "";
+    document.getElementById("cfgFeishuReply").checked = cfg.feishu?.notify_reply !== false;
+    document.getElementById("cfgFeishuInterview").checked = cfg.feishu?.notify_interview !== false;
+    document.getElementById("cfgFeishuSummary").checked = cfg.feishu?.notify_summary || false;
 
     configLoaded = true;
   } catch { statusEl.textContent = "加载配置失败"; }
@@ -370,9 +371,65 @@ document.getElementById("toggleKeyEye").addEventListener("click", () => {
   inp.type = inp.type === "password" ? "text" : "password";
 });
 
-document.getElementById("toggleOcEye").addEventListener("click", () => {
-  const inp = document.getElementById("cfgOcToken");
+document.getElementById("toggleFeishuEye").addEventListener("click", () => {
+  const inp = document.getElementById("cfgFeishuAppSecret");
   inp.type = inp.type === "password" ? "text" : "password";
+});
+
+// ── 测试按钮 ──
+document.getElementById("testLlmBtn").addEventListener("click", async () => {
+  const api_key = document.getElementById("cfgApiKey").value.trim();
+  const resultEl = document.getElementById("testLlmResult");
+  if (!api_key) {
+    resultEl.style.display = "block";
+    resultEl.style.color = "#c62828";
+    resultEl.textContent = "请先填写 API Key";
+    return;
+  }
+  const btn = document.getElementById("testLlmBtn");
+  const origText = btn.textContent;
+  btn.textContent = "测试中..."; btn.disabled = true;
+  try {
+    const resp = await chrome.runtime.sendMessage({
+      action: "testLlm",
+      data: {
+        provider: document.getElementById("cfgProvider").value,
+        api_url: document.getElementById("cfgApiUrl").value,
+        api_key,
+        model: document.getElementById("cfgModel").value,
+      },
+    });
+    resultEl.style.display = "block";
+    resultEl.style.color = resp.ok ? "#2e7d32" : "#c62828";
+    resultEl.textContent = resp.msg;
+  } catch { resultEl.style.display = "block"; resultEl.style.color = "#c62828"; resultEl.textContent = "测试请求失败"; }
+  btn.textContent = origText; btn.disabled = false;
+});
+
+document.getElementById("testFeishuBtn").addEventListener("click", async () => {
+  const appId = document.getElementById("cfgFeishuAppId").value.trim();
+  const appSecret = document.getElementById("cfgFeishuAppSecret").value.trim();
+  const openId = document.getElementById("cfgFeishuOpenId").value.trim();
+  const resultEl = document.getElementById("testFeishuResult");
+  if (!appId || !appSecret || !openId) {
+    resultEl.style.display = "block";
+    resultEl.style.color = "#c62828";
+    resultEl.textContent = "请填写 App ID、App Secret 和 Open ID";
+    return;
+  }
+  const btn = document.getElementById("testFeishuBtn");
+  const origText = btn.textContent;
+  btn.textContent = "测试中..."; btn.disabled = true;
+  try {
+    const resp = await chrome.runtime.sendMessage({
+      action: "testFeishu",
+      data: { app_id: appId, app_secret: appSecret, open_id: openId },
+    });
+    resultEl.style.display = "block";
+    resultEl.style.color = resp.ok ? "#2e7d32" : "#c62828";
+    resultEl.textContent = resp.msg;
+  } catch { resultEl.style.display = "block"; resultEl.style.color = "#c62828"; resultEl.textContent = "测试请求失败"; }
+  btn.textContent = origText; btn.disabled = false;
 });
 
 // ── 保存 ──
@@ -415,13 +472,14 @@ document.getElementById("saveConfigBtn").addEventListener("click", async () => {
       api_key: document.getElementById("cfgApiKey").value,
       model: modelVal === "__custom__" ? "" : modelVal,
     },
-    openclaw: {
-      enabled: document.getElementById("cfgOcEnabled").value === "1",
-      gateway_url: document.getElementById("cfgOcUrl").value,
-      token: document.getElementById("cfgOcToken").value,
-      notify_reply: document.getElementById("cfgOcReply").checked,
-      notify_interview: document.getElementById("cfgOcInterview").checked,
-      notify_summary: document.getElementById("cfgOcSummary").checked,
+    feishu: {
+      enabled: document.getElementById("cfgFeishuEnabled").value === "1",
+      app_id: document.getElementById("cfgFeishuAppId").value,
+      app_secret: document.getElementById("cfgFeishuAppSecret").value,
+      open_id: document.getElementById("cfgFeishuOpenId").value,
+      notify_reply: document.getElementById("cfgFeishuReply").checked,
+      notify_interview: document.getElementById("cfgFeishuInterview").checked,
+      notify_summary: document.getElementById("cfgFeishuSummary").checked,
     },
   };
 
