@@ -6,6 +6,9 @@
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function ts() { return new Date().toLocaleString("zh-CN", { hour12: false }); }
 
+const DAILY_SUMMARY_ALARM = "daily_summary";
+const LAST_SUMMARY_TS_KEY = "_last_summary_ts";
+
 // ── 本地日志系统 ──
 const LOG_MAX = 200;
 const LOG_KEY = "_logs";
@@ -220,6 +223,8 @@ const DEFAULT_CONFIG = {
     notify_reply: true,
     notify_interview: true,
     notify_summary: false,
+    notify_daily_summary: false,
+    summary_time: "20:00",
   },
 };
 
@@ -590,9 +595,12 @@ async function notifyFeishu(config, event, data) {
   if (event === "reply" && !fs.notify_reply) return;
   if (event === "interview" && !fs.notify_interview) return;
   if (event === "summary" && !fs.notify_summary) return;
+  if (event === "daily_summary" && !fs.notify_daily_summary) return;
 
   let text = "";
-  if (event === "reply") {
+  if (event === "daily_summary") {
+    text = data.text || "";
+  } else if (event === "reply") {
     text = `[Boss助手] 已自动投递\n公司: ${data.company}\n岗位: ${data.jobTitle || data.position}\n薪资: ${data.salary || "未知"}\n评分: ${data.score}分\n理由: ${data.reason}`;
   } else if (event === "interview") {
     text = `[Boss助手] 检测到面试邀请\n公司: ${data.company}\n岗位: ${data.jobTitle || data.position}\n关键词: ${data.keyword}\n内容: ${(data.message || "").substring(0, 100)}`;
@@ -628,6 +636,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     notifyAlert: () => handleNotifyAlert(msg.data),
     testLlm: () => handleTestLlm(msg.data),
     testFeishu: () => handleTestFeishu(msg.data),
+    setupDailySummaryAlarm: () => setupDailySummaryAlarm().then(() => ({ ok: true })),
   };
   const handler = handlers[msg.action];
   if (handler) { handler().then(sendResponse); return true; }
@@ -800,6 +809,8 @@ async function handleGetConfig() {
       notify_reply: c.feishu?.notify_reply !== false,
       notify_interview: c.feishu?.notify_interview !== false,
       notify_summary: c.feishu?.notify_summary || false,
+      notify_daily_summary: c.feishu?.notify_daily_summary || false,
+      summary_time: c.feishu?.summary_time || "20:00",
     },
     providers: LLM_PROVIDERS,
   };
@@ -840,9 +851,11 @@ async function handleSaveConfig(data) {
     c.feishu = c.feishu || {};
     if (data.feishu.enabled !== undefined) c.feishu.enabled = data.feishu.enabled;
     for (const k of ["app_id", "app_secret", "open_id"]) { if (data.feishu[k] !== undefined) c.feishu[k] = data.feishu[k]; }
-    for (const k of ["notify_reply", "notify_interview", "notify_summary"]) { if (data.feishu[k] !== undefined) c.feishu[k] = data.feishu[k]; }
+    for (const k of ["notify_reply", "notify_interview", "notify_summary", "notify_daily_summary"]) { if (data.feishu[k] !== undefined) c.feishu[k] = data.feishu[k]; }
+    if (data.feishu.summary_time !== undefined) c.feishu.summary_time = data.feishu.summary_time;
   }
   await saveConfigStore(c);
+  await setupDailySummaryAlarm();
   console.log("[Boss助手] 配置已保存");
   return { ok: true };
 }
@@ -882,6 +895,70 @@ async function handleNotifyRoundSummary(data) {
   return { ok: true };
 }
 
+async function setupDailySummaryAlarm() {
+  await chrome.alarms.clear(DAILY_SUMMARY_ALARM);
+  const config = await getConfig();
+  const fs = config.feishu;
+  if (!fs?.enabled || !fs?.notify_daily_summary || !fs?.summary_time) return;
+  const [h, m] = (fs.summary_time || "20:00").split(":").map(Number);
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+  if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+  chrome.alarms.create(DAILY_SUMMARY_ALARM, { when: target.getTime(), periodInMinutes: 1440 });
+  await L.info("每日总结", `已注册定时任务: ${fs.summary_time}, 下次触发 ${target.toLocaleString("zh-CN", { hour12: false })}`);
+}
+
+async function handleDailySummary() {
+  const config = await getConfig();
+  const fs = config.feishu;
+  if (!fs?.enabled || !fs?.notify_daily_summary) return;
+
+  const { [LAST_SUMMARY_TS_KEY]: lastTs } = await chrome.storage.local.get(LAST_SUMMARY_TS_KEY);
+  const allProcessed = await getAllProcessed();
+  const entries = Object.values(allProcessed);
+
+  const newEntries = lastTs
+    ? entries.filter(e => e.timestamp && e.timestamp > lastTs)
+    : entries;
+
+  await chrome.storage.local.set({ [LAST_SUMMARY_TS_KEY]: ts() });
+
+  if (newEntries.length === 0) {
+    await L.info("每日总结", "无新记录，跳过推送");
+    return;
+  }
+
+  const stats = {};
+  for (const e of newEntries) {
+    const t = e.type || e.action || "IGNORE";
+    stats[t] = (stats[t] || 0) + 1;
+  }
+
+  const timeRange = lastTs ? `${lastTs} ~ ${ts()}` : `全量 ~ ${ts()}`;
+  let text = `[Boss助手] 每日总结\n时间范围: ${timeRange}\n新增记录: ${newEntries.length} 条`;
+  text += `\n\n统计:\n  投递: ${stats.REPLY || 0} | 面试: ${stats.INTERVIEW || 0} | 婉拒: ${stats.REJECT || 0} | 跳过: ${stats.IGNORE || 0} | 接受简历: ${stats.ACCEPTED || 0}`;
+
+  const replied = newEntries.filter(e => (e.type || e.action) === "REPLY");
+  if (replied.length > 0) {
+    text += `\n\n投递详情 (${replied.length} 条):`;
+    for (const e of replied.slice(0, 10)) {
+      text += `\n  • ${e.company || "?"} | ${e.jobTitle || e.position || ""} | ${e.salary || "薪资未知"} | ${e.score}分`;
+    }
+    if (replied.length > 10) text += `\n  ... 及其他 ${replied.length - 10} 条`;
+  }
+
+  const interviews = newEntries.filter(e => e.type === "INTERVIEW");
+  if (interviews.length > 0) {
+    text += `\n\n面试邀请 (${interviews.length} 条):`;
+    for (const e of interviews.slice(0, 5)) {
+      text += `\n  • ${e.company || "?"} | ${e.jobTitle || e.position || ""} | ${e.keyword || ""}`;
+    }
+  }
+
+  await notifyFeishu(config, "daily_summary", { text });
+  await L.info("每日总结", `推送成功: ${newEntries.length} 条记录`);
+}
+
 async function handleTestLlm(data) {
   const { provider, api_url, api_key, model } = data || {};
   if (!api_key) return { ok: false, msg: "请先填写 API Key" };
@@ -913,6 +990,12 @@ async function handleClearProcessed() {
   console.log(`[Boss助手] 已清除 ${keysToRemove.length} 条处理记录`);
   return { ok: true, cleared: keysToRemove.length };
 }
+
+// ── 每日总结定时任务 ──
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === DAILY_SUMMARY_ALARM) await handleDailySummary();
+});
+setupDailySummaryAlarm();
 
 // ── 初始化 ──
 chrome.runtime.onInstalled.addListener(async () => {

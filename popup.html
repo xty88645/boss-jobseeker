@@ -281,7 +281,14 @@
           <label style="font-size:12px;display:flex;align-items:center;gap:3px;">
             <input type="checkbox" id="cfgFeishuSummary"> 轮次摘要
           </label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:3px;">
+            <input type="checkbox" id="cfgFeishuDailySummary"> 每日总结
+          </label>
         </div>
+      </div>
+      <div class="field" id="dailySummaryTimeWrap" style="display:none;">
+        <label>每日总结时刻</label>
+        <input type="time" id="cfgFeishuSummaryTime" value="20:00" style="width:100px;padding:2px 4px;font-size:12px;border:1px solid #ddd;border-radius:4px;">
       </div>
       <button type="button" id="testFeishuBtn" class="secondary" style="margin-top:6px;font-size:11px;padding:5px;">测试飞书通知</button>
       <div id="testFeishuResult" class="hint" style="margin-top:3px;display:none;"></div>

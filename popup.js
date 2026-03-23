@@ -317,6 +317,10 @@ async function loadConfig() {
     document.getElementById("cfgFeishuReply").checked = cfg.feishu?.notify_reply !== false;
     document.getElementById("cfgFeishuInterview").checked = cfg.feishu?.notify_interview !== false;
     document.getElementById("cfgFeishuSummary").checked = cfg.feishu?.notify_summary || false;
+    const dailySummaryChecked = cfg.feishu?.notify_daily_summary || false;
+    document.getElementById("cfgFeishuDailySummary").checked = dailySummaryChecked;
+    document.getElementById("cfgFeishuSummaryTime").value = cfg.feishu?.summary_time || "20:00";
+    document.getElementById("dailySummaryTimeWrap").style.display = dailySummaryChecked ? "block" : "none";
 
     configLoaded = true;
   } catch { statusEl.textContent = "加载配置失败"; }
@@ -374,6 +378,9 @@ document.getElementById("toggleKeyEye").addEventListener("click", () => {
 document.getElementById("toggleFeishuEye").addEventListener("click", () => {
   const inp = document.getElementById("cfgFeishuAppSecret");
   inp.type = inp.type === "password" ? "text" : "password";
+});
+document.getElementById("cfgFeishuDailySummary").addEventListener("change", (e) => {
+  document.getElementById("dailySummaryTimeWrap").style.display = e.target.checked ? "block" : "none";
 });
 
 // ── 测试按钮 ──
@@ -480,6 +487,8 @@ document.getElementById("saveConfigBtn").addEventListener("click", async () => {
       notify_reply: document.getElementById("cfgFeishuReply").checked,
       notify_interview: document.getElementById("cfgFeishuInterview").checked,
       notify_summary: document.getElementById("cfgFeishuSummary").checked,
+      notify_daily_summary: document.getElementById("cfgFeishuDailySummary").checked,
+      summary_time: document.getElementById("cfgFeishuSummaryTime").value || "20:00",
     },
   };
 
